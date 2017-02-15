@@ -35,20 +35,21 @@ def softmax_loss_naive(W, X, y, reg):
       stableP1 -= np.max(stableP1)
       p2           = np.exp(stableP1)
       allExp       = np.sum(p2)
+      p3 = p2/allExp
+      p3_correct = p3[y[i]]
       #print "X ", X.shape
       #print "dLdW ", dLdW.shape
 
       dLdW[: , y[i]] += -X[i]
-      loss += -np.sum(np.log(p2/allExp))
+      loss += -np.log(p3_correct)
 
       for j in range(0, num_classes):
-          dLdy[i][j] = p2[j] - y[i]
           
-          dLdW[:, j] += (p2[j]/allExp)*X[i]
+          dLdW[:, j] += p3[j]*X[i]
+      
       
   loss /= num_train
   loss += 0.5 * reg* np.sum(W*W)
-
 
   dW = dLdW/num_train + reg*W
   
@@ -74,19 +75,19 @@ def softmax_loss_vectorized(W, X, y, reg):
   allExp      = np.sum(p2, axis=1, keepdims=True)
   p3 = p2/allExp
 
-  loss        = -np.sum(np.log(p2/allExp))
+  p3_correct = p3[np.arange(p3.shape[0]), y]
+
+  loss        = -np.sum(np.log(p3_correct))
   loss       /= num_train
   loss       += 0.5 * reg*np.sum(W*W)
 
-  y_pred      = np.zeros(p3.shape)
-
-  y_pred[np.arange(num_train), y] = 1
-  dLdy = p3 - y_pred
+  p3[np.arange(p3.shape[0]),y] -= 1
+  
   #print "dldy ", dLdy.shape
   #print "X ", X.shape
   #print "W ", W.shape
 
-  dLdW = (X.T).dot(dLdy) 
+  dLdW = (X.T).dot(p3) 
   #print "dLdW ", dLdW.shape
   dW = dLdW/num_train + reg*W
   
