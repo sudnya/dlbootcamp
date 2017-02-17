@@ -151,10 +151,21 @@ def batchnorm_forward(x, gamma, beta, bn_param):
     # the momentum variable to update the running mean and running variance,    #
     # storing your result in the running_mean and running_var variables.        #
     #############################################################################
-    pass
-    #############################################################################
-    #                             END OF YOUR CODE                              #
-    #############################################################################
+    current_mean     = 1./N * np.sum(x, axis = 0)
+    stable_x         = x - current_mean
+    squared_x        = stable_x**2
+    current_var      = 1./N * np.sum(squared_x, axis = 0)
+    sqrtvar          = np.sqrt(current_var + eps)
+    ivar             = 1./sqrtvar
+    xhat             = stable_x * ivar
+    gammax           = gamma * xhat
+    out              = gammax + beta
+
+    running_mean = (momentum*running_mean) + (1.0-momentum)*current_mean #slowly add new effect
+    running_var  = (momentum*running_var) + (1.0-momentum)*current_var
+    
+    cache            = (xhat, gamma, stable_x, ivar, sqrtvar, current_var, eps)
+
   elif mode == 'test':
     #############################################################################
     # TODO: Implement the test-time forward pass for batch normalization. Use   #
@@ -162,10 +173,15 @@ def batchnorm_forward(x, gamma, beta, bn_param):
     # and shift the normalized data using gamma and beta. Store the result in   #
     # the out variable.                                                         #
     #############################################################################
-    pass
-    #############################################################################
-    #                             END OF YOUR CODE                              #
-    #############################################################################
+    current_mean     = running_mean 
+    stable_x         = x - current_mean
+    squared_x        = stable_x**2
+    current_variance = running_var
+    sqrtvar          = np.sqrt(current_variance + eps)
+    ivar             = 1./sqrtvar
+    xhat             = stable_x * ivar
+    gammax           = gamma * xhat
+    out              = gammax + beta
   else:
     raise ValueError('Invalid forward batchnorm mode "%s"' % mode)
 
