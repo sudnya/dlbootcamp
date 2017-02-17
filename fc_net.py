@@ -174,6 +174,7 @@ class FullyConnectedNet(object):
       will make the dropout layers deteriminstic so we can gradient check the
       model.
     """
+    
     self.use_batchnorm = use_batchnorm
     self.use_dropout = dropout > 0
     self.reg = reg
@@ -186,15 +187,23 @@ class FullyConnectedNet(object):
     self.all_dims += list(hidden_dims)
     self.all_dims.append(num_classes)
 
-    for i in range(1, len(self.all_dims)):
-        w_key = 'W' + str(i)
-        b_key = 'b' + str(i)
-        gamma_key = 'gamma' + str(i)
-        beta_key  = 'beta' + str(i)
-        self.params[w_key]     = weight_scale * np.random.randn(self.all_dims[i-1], self.all_dims[i])
-        self.params[b_key]     = np.zeros(self.all_dims[i])
-        self.params[gamma_key] = np.ones(self.all_dims[i])
-        self.params[beta_key]  = np.zeros(self.all_dims[i])
+    layer_size = input_dim
+    N = self.num_layers
+
+    for i, hd in enumerate(hidden_dims):
+        w_key = 'W' + str(i+1)
+        b_key = 'b' + str(i+1)
+        if self.use_batchnorm:
+            gamma_key = 'gamma' + str(i+1)
+            beta_key  = 'beta' + str(i+1)
+            self.params[gamma_key] = np.ones(hd)
+            self.params[beta_key]  = np.zeros(hd)
+
+        self.params[w_key]     = weight_scale * np.random.randn(layer_size, hd)
+        self.params[b_key]     = np.zeros(hd)
+        layer_size = hd
+    self.params['W%d' % N] = weight_scale * np.random.randn(layer_size, num_classes)
+    self.params['b%d' % N] = np.zeros(num_classes) 
 
     #for k, v in self.params.iteritems():
     #    print k
@@ -265,6 +274,7 @@ class FullyConnectedNet(object):
     # layer, etc.                                                              #
     ############################################################################
     caches = []
+    dp_cache = {}
     N = self.num_layers
     loss, grads = 0.0, {}
     prev_activations = X
@@ -278,16 +288,23 @@ class FullyConnectedNet(object):
         if self.use_batchnorm:
             gamma_key = 'gamma' + str(i)
             beta_key  = 'beta' + str(i)
+            #print 'Gamma key: ', gamma_key
+            #print 'Beta key: ', beta_key
+            #print 'X shape: ', prev_activations.shape
+            #print 'Current W key: ', W_idx, ' , W shape: ', current_W.shape
+            #print 'Current b key: ', b_idx, ' , b shape: ', current_b.shape
+            #print 'Current gamma key: ', gamma_key, ' , gamma shape: ', self.params[gamma_key].shape
+            #print 'Current beta key: ', beta_key, ' , beta shape: ', self.params[beta_key].shape
+
             out, cache = affine_batchnorm_relu_forward(prev_activations, current_W, current_b, self.params[gamma_key], self.params[beta_key], self.bn_params[i-1])
-
-
         else:
             out, cache  = affine_relu_forward(prev_activations, current_W , current_b)
         
+        if self.use_dropout:
+            out, dp_cache[i] = dropout_forward(out, self.dropout_param)
         caches.append(cache)
         #dout, cache  = relu_forward(dout)
         prev_activations = out
-    
     out, cache = affine_forward(prev_activations, self.params["W%d"%(N)], self.params["b%d"%(N)])
 
     scores = out
@@ -326,18 +343,18 @@ class FullyConnectedNet(object):
     for i in range(self.num_layers-1, 0, -1):
         W_idx        = "W" + str(i)
         b_idx        = "b" + str(i)
-        dW_idx       = "dW" + str(i)
-        db_idx       = "db" + str(i)
-        dx_idx       = "dx" + str(i)
+
+        if self.use_dropout:
+            dx = dropout_backward(dx, dp_cache[i])
         
         if self.use_batchnorm:
             gamma_key = 'gamma' + str(i)
             beta_key  = 'beta' + str(i)
-            gamma = self.params[gamma_key]
-            beta  = self.params[beta_key]
             dx,dw,db,dgamma,dbeta = affine_batchnorm_relu_backward(dx, caches.pop(0))
             grads[gamma_key] = dgamma
             grads[beta_key]  = dbeta
+            #print "updating gamma and beta for layer H ", i
+
         else:
             dx,dw,db = affine_relu_backward(dx, caches.pop(0))
         grads[W_idx] = dw + self.reg*self.params[W_idx]
