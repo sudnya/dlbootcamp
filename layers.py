@@ -214,10 +214,28 @@ def batchnorm_backward(dout, cache):
   # TODO: Implement the backward pass for batch normalization. Store the      #
   # results in the dx, dgamma, and dbeta variables.                           #
   #############################################################################
-  pass
-  #############################################################################
-  #                             END OF YOUR CODE                              #
-  #############################################################################
+  N,D = dout.shape
+  xnorm, gamma, mu, ivar, sigma, var, eps = cache
+  #print "dout shape ", dout.shape
+  #print "sigma ", sigma
+  #print "mu ", mu
+  
+  dbeta   = np.sum(dout, axis=0) #backprop over broadcast
+
+  dgamma = np.sum(dout*xnorm, axis=0)
+
+  t1     = dout*gamma
+  t2     = t1*mu
+  t3     = -1.0/(sigma*sigma) * t2
+  t4     = 1.0/(2*sigma) * t3
+  t5     = (1.0/N) * t4.sum(axis=0)
+  t6     = (2.0*mu)*t5
+  s1     = (1.0/sigma)*t1
+  s2     = s1 + t6
+  t7     = -s2
+  t8     = t7.sum(axis=0)/N
+
+  dx     = s2 + t8
 
   return dx, dgamma, dbeta
 
@@ -244,10 +262,22 @@ def batchnorm_backward_alt(dout, cache):
   # should be able to compute gradients with respect to the inputs in a       #
   # single statement; our implementation fits on a single 80-character line.  #
   #############################################################################
-  pass
-  #############################################################################
-  #                             END OF YOUR CODE                              #
-  #############################################################################
+  N,D = dout.shape
+  xnorm, gamma, mu, ivar, sigma, var, eps = cache
+  dbeta   = np.sum(dout, axis=0) #backprop over broadcast
+  dgamma = np.sum(dout*xnorm, axis=0)
+
+  t1     = dout*gamma
+  #t3     = -1.0/(sigma*sigma) * (t1*mu)
+  #t4     = -t1*mu/(2*sigma**3)
+  #t5     = -(1.0/N) *(t1*mu/(2*sigma**3)).sum(axis=0)
+  #t6     = -(2.0*mu/N)*(t1*mu/(2*sigma**3)).sum(axis=0)
+  #s1     = (1.0/sigma)*t1
+  s2     = (t1/sigma) - (2.0*mu/N)*(t1*xnorm/(2*sigma**2)).sum(axis=0)#t6
+  #t7     = -(1.0/sigma)*t1  -(2.0*mu/N)*(t1*mu/(2*sigma**3)).sum(axis=0)
+  #t8     = -s2.sum(axis=0)/N
+
+  dx     = s2 - s2.sum(axis=0)/N
   
   return dx, dgamma, dbeta
 

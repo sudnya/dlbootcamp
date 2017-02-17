@@ -189,9 +189,15 @@ class FullyConnectedNet(object):
     for i in range(1, len(self.all_dims)):
         w_key = 'W' + str(i)
         b_key = 'b' + str(i)
-        self.params[w_key] = weight_scale * np.random.randn(self.all_dims[i-1], self.all_dims[i])
-        self.params[b_key] = np.zeros(self.all_dims[i])
+        gamma_key = 'gamma' + str(i)
+        beta_key  = 'beta' + str(i)
+        self.params[w_key]     = weight_scale * np.random.randn(self.all_dims[i-1], self.all_dims[i])
+        self.params[b_key]     = np.zeros(self.all_dims[i])
+        self.params[gamma_key] = np.ones(self.all_dims[i])
+        self.params[beta_key]  = np.zeros(self.all_dims[i])
 
+    #for k, v in self.params.iteritems():
+    #    print k
     ############################################################################
     # TODO: Initialize the parameters of the network, storing all values in    #
     # the self.params dictionary. Store weights and biases for the first layer #
@@ -269,12 +275,21 @@ class FullyConnectedNet(object):
         current_W    = self.params[W_idx]
         current_b    = self.params[b_idx]
 
-        out, cache  = affine_relu_forward(prev_activations, current_W , current_b)
+        if self.use_batchnorm:
+            gamma_key = 'gamma' + str(i)
+            beta_key  = 'beta' + str(i)
+            out, cache = affine_batchnorm_relu_forward(prev_activations, current_W, current_b, self.params[gamma_key], self.params[beta_key], self.bn_params[i-1])
+
+
+        else:
+            out, cache  = affine_relu_forward(prev_activations, current_W , current_b)
+        
         caches.append(cache)
         #dout, cache  = relu_forward(dout)
         prev_activations = out
-
+    
     out, cache = affine_forward(prev_activations, self.params["W%d"%(N)], self.params["b%d"%(N)])
+
     scores = out
 
     # If y is None then we are in test mode so just return scores
@@ -314,8 +329,17 @@ class FullyConnectedNet(object):
         dW_idx       = "dW" + str(i)
         db_idx       = "db" + str(i)
         dx_idx       = "dx" + str(i)
-
-        dx,dw,db = affine_relu_backward(dx, caches.pop(0))
+        
+        if self.use_batchnorm:
+            gamma_key = 'gamma' + str(i)
+            beta_key  = 'beta' + str(i)
+            gamma = self.params[gamma_key]
+            beta  = self.params[beta_key]
+            dx,dw,db,dgamma,dbeta = affine_batchnorm_relu_backward(dx, caches.pop(0))
+            grads[gamma_key] = dgamma
+            grads[beta_key]  = dbeta
+        else:
+            dx,dw,db = affine_relu_backward(dx, caches.pop(0))
         grads[W_idx] = dw + self.reg*self.params[W_idx]
         grads[b_idx] = db
     
