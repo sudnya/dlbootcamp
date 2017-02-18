@@ -139,7 +139,7 @@ def batchnorm_forward(x, gamma, beta, bn_param):
   out, cache = None, None
   if mode == 'train':
     #############################################################################
-    # TODO: Implement the training-time forward pass for batch normalization.   #
+    # Implement the training-time forward pass for batch normalization.   #
     # Use minibatch statistics to compute the mean and variance, use these      #
     # statistics to normalize the incoming data, and scale and shift the        #
     # normalized data using gamma and beta.                                     #
@@ -168,7 +168,7 @@ def batchnorm_forward(x, gamma, beta, bn_param):
 
   elif mode == 'test':
     #############################################################################
-    # TODO: Implement the test-time forward pass for batch normalization. Use   #
+    # Implement the test-time forward pass for batch normalization. Use   #
     # the running mean and variance to normalize the incoming data, then scale  #
     # and shift the normalized data using gamma and beta. Store the result in   #
     # the out variable.                                                         #
@@ -211,7 +211,7 @@ def batchnorm_backward(dout, cache):
   """
   dx, dgamma, dbeta = None, None, None
   #############################################################################
-  # TODO: Implement the backward pass for batch normalization. Store the      #
+  # Implement the backward pass for batch normalization. Store the      #
   # results in the dx, dgamma, and dbeta variables.                           #
   #############################################################################
   N,D = dout.shape
@@ -255,7 +255,7 @@ def batchnorm_backward_alt(dout, cache):
   """
   dx, dgamma, dbeta = None, None, None
   #############################################################################
-  # TODO: Implement the backward pass for batch normalization. Store the      #
+  # Implement the backward pass for batch normalization. Store the      #
   # results in the dx, dgamma, and dbeta variables.                           #
   #                                                                           #
   # After computing the gradient with respect to the centered inputs, you     #
@@ -268,14 +268,7 @@ def batchnorm_backward_alt(dout, cache):
   dgamma = np.sum(dout*xnorm, axis=0)
 
   t1     = dout*gamma
-  #t3     = -1.0/(sigma*sigma) * (t1*mu)
-  #t4     = -t1*mu/(2*sigma**3)
-  #t5     = -(1.0/N) *(t1*mu/(2*sigma**3)).sum(axis=0)
-  #t6     = -(2.0*mu/N)*(t1*mu/(2*sigma**3)).sum(axis=0)
-  #s1     = (1.0/sigma)*t1
   s2     = (t1/sigma) - (2.0*mu/N)*(t1*xnorm/(2*sigma**2)).sum(axis=0)#t6
-  #t7     = -(1.0/sigma)*t1  -(2.0*mu/N)*(t1*mu/(2*sigma**3)).sum(axis=0)
-  #t8     = -s2.sum(axis=0)/N
 
   dx     = s2 - s2.sum(axis=0)/N
   
@@ -310,21 +303,16 @@ def dropout_forward(x, dropout_param):
 
   if mode == 'train':
     ###########################################################################
-    # TODO: Implement the training phase forward pass for inverted dropout.   #
+    #  Implement the training phase forward pass for inverted dropout.   #
     # Store the dropout mask in the mask variable.                            #
     ###########################################################################
-    pass
-    ###########################################################################
-    #                            END OF YOUR CODE                             #
-    ###########################################################################
+    mask = (np.random.rand(*x.shape) >= p) / (1.0 - p)
+    out = x * mask
   elif mode == 'test':
     ###########################################################################
-    # TODO: Implement the test phase forward pass for inverted dropout.       #
+    # Implement the test phase forward pass for inverted dropout.       #
     ###########################################################################
-    pass
-    ###########################################################################
-    #                            END OF YOUR CODE                             #
-    ###########################################################################
+    out = x
 
   cache = (dropout_param, mask)
   out = out.astype(x.dtype, copy=False)
@@ -348,10 +336,7 @@ def dropout_backward(dout, cache):
     ###########################################################################
     # TODO: Implement the training phase backward pass for inverted dropout.  #
     ###########################################################################
-    pass
-    ###########################################################################
-    #                            END OF YOUR CODE                             #
-    ###########################################################################
+    dx = mask * dout
   elif mode == 'test':
     dx = dout
   return dx
@@ -385,10 +370,35 @@ def conv_forward_naive(x, w, b, conv_param):
   # TODO: Implement the convolutional forward pass.                           #
   # Hint: you can use the function np.pad for padding.                        #
   #############################################################################
-  pass
-  #############################################################################
-  #                             END OF YOUR CODE                              #
-  #############################################################################
+  stride = conv_param['stride']
+  pad    = conv_param['pad']
+
+  #print "input ", x.shape
+  #print "filter ", w.shape
+  #print stride, pad
+
+  iN, iC, iH, iW   = x.shape
+  fF, fC, fHH, fWW = w.shape
+  oH = 1 + (iH - fHH + 2*pad)/stride
+  oW = 1 + (iW - fWW + 2*pad)/stride
+
+  temp = np.pad(x, ((0,0),(0,0),(pad,pad),(pad,pad)), mode='constant', constant_values=0)
+
+  out = np.zeros((iN, fF, oH, oW))
+
+  for c in range(oH):
+      for r in range(oW):
+          c_start = c*stride
+          c_end   = c_start + fHH
+          r_start = r*stride
+          r_end = r_start + fWW
+          temp_new = temp[:, : , c_start:c_end, r_start:r_end]
+
+          for filt in range(fF):
+              out[:, filt, c, r] = np.sum(temp_new*w[filt,:,:,:], axis=(1,2,3))
+  
+  out = out + (b)[None,:,None,None] 
+  
   cache = (x, w, b, conv_param)
   return out, cache
 
@@ -408,12 +418,50 @@ def conv_backward_naive(dout, cache):
   """
   dx, dw, db = None, None, None
   #############################################################################
-  # TODO: Implement the convolutional backward pass.                          #
+  #       Implement the convolutional backward pass.                          #
   #############################################################################
-  pass
-  #############################################################################
-  #                             END OF YOUR CODE                              #
-  #############################################################################
+  x, w, b, conv_param = cache
+  
+  stride = conv_param['stride']
+  pad    = conv_param['pad']
+  
+  iN, iC, iH, iW   = x.shape
+  fF, fC, fHH, fWW = w.shape
+  
+  oH = 1 + (iH - fHH + 2*pad)/stride
+  oW = 1 + (iW - fWW + 2*pad)/stride
+  
+  x_pad = np.pad(x, ((0,0),(0,0),(pad,pad),(pad,pad)), mode='constant', constant_values=0)
+  
+  dx = np.zeros(x_pad.shape)
+  dw = np.zeros(w.shape)
+  db = np.zeros(b.shape)
+  
+  db = np.sum(dout, axis=(0,2,3))
+
+  for c in range(oH):
+      for r in range(oW):
+          c_start = c*stride
+          c_end   = c_start + fHH
+          r_start = r*stride
+          r_end = r_start + fWW
+          #fwd -> temp_new = temp[:, : , c_start:c_end, r_start:r_end]
+
+          for filt in range(fF):
+              print "dw ", dw.shape
+              print "dout ", dout.shape
+              print "x_pad ", x_pad.shape
+
+              dout_this_filter = dout[:, filt, c, r]
+              dout_this_filter = dout_this_filter[:,None,None,None] #bcast over 
+              t1               = dout_this_filter*(x_pad[:,:, c_start:c_end, r_start:r_end])
+
+              dw[filt, :, :,:] = np.sum(t1, axis=0)
+
+              dx[:, :, c_start:c_end, r_start:r_end] = dout_this_filter*w[filt,:,:,:]
+
+  #remove padding ugh! :(
+  dx = dx[:,:, 1:-1, 1:-1]
   return dx, dw, db
 
 
