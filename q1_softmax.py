@@ -26,7 +26,7 @@ def softmax(x):
   num_samples = x.shape[0]
   
   max_x = tf.expand_dims(tf.reduce_max(x, axis=1), 1)
-  print max_x
+  #print max_x
   stable_x = tf.subtract(x, max_x)
   exp_x = tf.exp(stable_x)
   sum_exp_x = tf.expand_dims(tf.reduce_sum(exp_x, axis=1), 1)
@@ -61,6 +61,8 @@ def cross_entropy_loss(y, yhat):
   """
   ### YOUR CODE HERE
   #raise NotImplementedError
+  print "yHat ", yhat.get_shape
+  print "y    ", y.get_shape
   out = -tf.reduce_sum( tf.to_float(y)*tf.log(yhat) )
   ### END YOUR CODE
   return out
