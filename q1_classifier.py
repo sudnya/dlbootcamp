@@ -111,7 +111,7 @@ class SoftmaxModel(Model):
     """
     ### YOUR CODE HERE
     #raise NotImplementedError
-    optimizer = tf.train.GradientDescentOptimizer(learning_rate=1e-4)
+    optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.config.lr)
     train_op  = optimizer.minimize(loss)
 
     ### END YOUR CODE
@@ -144,8 +144,6 @@ class SoftmaxModel(Model):
     print "W ", self.w.get_shape()
     print "x ", input_data.shape
     self.b = tf.Variable(tf.zeros([self.config.n_classes], dtype=tf.float32), name='b1')
-    t = tf.matmul(input_data, self.w)
-    print "mul " , t.get_shape()
     out = softmax( tf.matmul(input_data, self.w) + self.b )
     
     ### END YOUR CODE
