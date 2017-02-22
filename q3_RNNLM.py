@@ -9,7 +9,8 @@ from utils import calculate_perplexity, get_ptb_dataset, Vocab
 from utils import ptb_iterator, sample
 
 import tensorflow as tf
-from tensorflow.python.ops.seq2seq import sequence_loss
+#from tensorflow.python.ops.seq2seq import sequence_loss
+from tensorflow.contrib.seq2seq import sequence_loss
 from model import LanguageModel
 
 from q2_initialization import xavier_weight_init
@@ -49,7 +50,7 @@ class RNNLM_Model(LanguageModel):
     self.encoded_test = np.array(
         [self.vocab.encode(word) for word in get_ptb_dataset('test')],
         dtype=np.int32)
-    debug = True
+    #debug = True
     if debug:
       num_debug = 128#1024
       self.encoded_train = self.encoded_train[:num_debug]
@@ -124,15 +125,19 @@ class RNNLM_Model(LanguageModel):
           # no need! understand tf.nn.embedding_lookup and you will know why!
       with tf.variable_scope('embed') as embed_scope:
           embeddings      = tf.get_variable("embeddings", shape=[len(self.vocab), self.config.embed_size], initializer=xavier_weight_init())
-          embedded_inputs = tf.nn.embedding_lookup(params=embeddings, ids=self.input_placeholder) #this miniB
-          #print "embedded look up -> ", embedded_inputs.get_shape()
-          # dims are embedded look up ->  (?, 10, 50)
-          embedded_inputs = tf.split(embedded_inputs, tf.ones(self.config.num_steps, dtype=tf.int32)) # each 'cell' in the RNN
-          inputs          = map(tf.squeeze, embedded_inputs) #get rid of the ? dim above
-          print "inputs after squeeze are: ", inputs
+          embedded_inputs = tf.nn.embedding_lookup(params=embeddings, ids=tf.transpose(self.input_placeholder)) #this miniB
+          print "embedded look up -> ", embedded_inputs.get_shape()
+          # dims are embedded look up ->  (10, ?, 50)
+          embedded_inputs = tf.split(embedded_inputs, self.config.num_steps, axis=0) # each 'cell' in the RNN
+          print "split gives ", len(embedded_inputs) , " entries of dim ", embedded_inputs[0].shape
+          #inputs = embedded_inputs
+          #print "split embedded look up -> ", len(embedded_inputs) , "  ", embedded_inputs[0].shape
+          inputs          = map(lambda x: tf.squeeze (x, axis=[0]), embedded_inputs) #get rid of the ? dim above
+          #print "inputs after tf.squeeze are: ", inputs
 
       #raise NotImplementedError
       ### END YOUR CODE
+      print "at the end of embedLayer ", len(inputs), "   ", inputs[0].shape
       return inputs
 
   def add_projection(self, rnn_outputs):
@@ -149,7 +154,8 @@ class RNNLM_Model(LanguageModel):
 
     Args:
       rnn_outputs: List of length num_steps, each of whose elements should be
-                   a tensor of shape (batch_size, embed_size).wrong!!!! hidden_size not embed_size
+                   a tensor of shape (batch_size, embed_size).
+                   wrong!!!! hidden_size not embed_size
     Returns:
       outputs: List of length num_steps, each a tensor of shape
                (batch_size, len(vocab)
@@ -157,8 +163,9 @@ class RNNLM_Model(LanguageModel):
     ### YOUR CODE HERE
     #raise NotImplementedError
     #this is W_hy
-    U   = tf.get_variable("U", shape=[self.config.hidden_size, len(self.vocab)])
-    b_2 = tf.get_variable("b_2", shape=[len(self.vocab)])
+    print "rnn_outputs dims ", rnn_outputs[0].shape
+    U   = tf.get_variable("U", shape=[self.config.hidden_size, len(self.vocab)], initializer=xavier_weight_init())
+    b_2 = tf.get_variable("b_2", shape=[len(self.vocab)], initializer=xavier_weight_init())
     outputs = []
     for t_step in range(len(rnn_outputs)):
         outputs.append(tf.matmul(tf.nn.dropout(rnn_outputs[t_step], self.dropout_placeholder), U) + b_2)
@@ -178,11 +185,20 @@ class RNNLM_Model(LanguageModel):
     """
     ### YOUR CODE HERE
     b_size  = self.config.batch_size
-    n_steps = self.config.steps
+    n_steps = self.config.num_steps
     targets = [tf.reshape(self.labels_placeholder, [-1])]
-    weights = [tf.ones([batch_size*num_steps])]
-    s2s_loss = sequence_loss([output], [tf.reshape(self.labels_placeholder, [b_size*n_steps,-1])], [tf.constant(1.0)])
-    tf.add_to_collection('total_loss', seq_loss)
+    weights = [tf.ones([b_size*n_steps])]
+    print "\n\nLoss Op: "
+    print "logits ", len(output), " - ", output[0].shape
+    t = tf.reshape(self.labels_placeholder, [b_size, n_steps])
+    print "labels ", t
+    #print "weights  ",  
+    w = tf.ones([b_size, n_steps])
+    print "weights ", w
+    f = tf.reshape(output, [b_size, n_steps, -1])
+    print "reshaped ", f
+    s2s_loss = sequence_loss(logits=f, targets=t, weights=w)
+    tf.add_to_collection('total_loss', s2s_loss)
     loss = s2s_loss
     print loss
     #raise NotImplementedError
@@ -222,18 +238,23 @@ class RNNLM_Model(LanguageModel):
     self.inputs = self.add_embedding()
     self.rnn_outputs = self.add_model(self.inputs)
     self.outputs = self.add_projection(self.rnn_outputs)
-    print "outputs are ", self.outputs
+    print 'outputs shape: ', self.outputs[0].shape
+    print len(self.outputs)
   
     # We want to check how well we correctly predict the next word
     # We cast o to float64 as there are numerical issues at hand
     # (i.e. sum(output of softmax) = 1.00000298179 and not 1)
     self.predictions = [tf.nn.softmax(tf.cast(o, 'float64')) for o in self.outputs]
-    print "preds ", self.predictions[0]
+    print "0th pred ", self.predictions[0]
     #print "vocab ", self.vocab
     # Reshape the output into len(vocab) sized chunks - the -1 says as many as
     # needed to evenly divide
-    output = tf.reshape(tf.concat(1, self.outputs), [-1, len(self.vocab)])
-    self.calculate_loss = self.add_loss_op(output)
+    #outputs = tf.reshape(tf.concat(self.outputs, 1), [-1, len(self.vocab)])
+    #self.calculate_loss = self.add_loss_op(self.outputs)
+
+    #TODO: API changed for seq to seq loss!
+    #outputs = tf.reshape(tf.concat(self.outputs, 1), [-1, len(self.vocab)])
+    self.calculate_loss = self.add_loss_op(self.outputs)
     self.train_step = self.add_training_op(self.calculate_loss)
 
 
@@ -278,32 +299,33 @@ class RNNLM_Model(LanguageModel):
     ### YOUR CODE HERE
     #raise NotImplementedError
     num_steps = len(inputs)
-    batch_size, embed_size = inputs[0].get_shape()
+    b_size, e_size = self.config.batch_size, self.config.embed_size
     print num_steps , " steps "
-    print batch_size, " seq "
-    print embed_size, "embeddings"
+    print b_size, " seq "
+    print e_size, "embeddings"
 
 
     h_size = self.config.hidden_size
 
-    self.initial_state = tf.zeros(shape=(batch_size, h_size))
+    self.initial_state = tf.zeros(shape=(b_size, h_size))
     embeddings = tf.get_collection('embeddings', 'embed_scope')
     rnn_outputs = []
 
     with tf.variable_scope('RNN') as scope:
         #scope.reuse_variables()
         H   = tf.get_variable(name='H',   dtype=tf.float32, shape=[h_size, h_size])
-        #I   = tf.eye(name='I',dtype=tf.float32, num_rows=embed_size, num_columns=h_size)
-        I   = tf.get_variable(name='I',dtype=tf.float32, shape=[embed_size, h_size])
+        I   = tf.get_variable(name='I',dtype=tf.float32, shape=[e_size, h_size])
         b_1 = tf.get_variable(name='b_1', dtype=tf.float32, shape=[h_size])
 
 
+        #at t = 0
         rnn_outputs.append(tf.sigmoid( tf.matmul(self.initial_state, H) + tf.matmul(inputs[0], I) + b_1) )
+        #remaining
         for i in range(1, num_steps):
             rnn_outputs.append(tf.sigmoid( tf.matmul(rnn_outputs[i-1], H) + tf.matmul(inputs[i], I) + b_1 ))
 
     
-        self.final_state = rnn_outputs[-1]
+        self.final_state = rnn_outputs[num_steps-1]
 
     ### END YOUR CODE
     return rnn_outputs
