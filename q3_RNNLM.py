@@ -30,7 +30,7 @@ class Config(object):
   embed_size = 50
   hidden_size = 100
   num_steps = 10
-  max_epochs = 16
+  max_epochs = 15
   early_stopping = 2
   dropout = 0.9
   lr = 0.001
@@ -50,9 +50,8 @@ class RNNLM_Model(LanguageModel):
     self.encoded_test = np.array(
         [self.vocab.encode(word) for word in get_ptb_dataset('test')],
         dtype=np.int32)
-    #debug = True
     if debug:
-      num_debug = 128#1024
+      num_debug = 1024
       self.encoded_train = self.encoded_train[:num_debug]
       self.encoded_valid = self.encoded_valid[:num_debug]
       self.encoded_test = self.encoded_test[:num_debug]
@@ -195,9 +194,12 @@ class RNNLM_Model(LanguageModel):
     #print "weights  ",  
     w = tf.ones([b_size, n_steps])
     print "weights ", w
-    f = tf.reshape(output, [b_size, n_steps, -1])
+    f = tf.reshape(output, [b_size, n_steps, len(self.vocab)])
     print "reshaped ", f
     s2s_loss = sequence_loss(logits=f, targets=t, weights=w)
+
+    self.sMax = tf.nn.softmax(f)
+    print "smax ", self.sMax
     tf.add_to_collection('total_loss', s2s_loss)
     loss = s2s_loss
     print loss
@@ -245,7 +247,7 @@ class RNNLM_Model(LanguageModel):
     # We cast o to float64 as there are numerical issues at hand
     # (i.e. sum(output of softmax) = 1.00000298179 and not 1)
     self.predictions = [tf.nn.softmax(tf.cast(o, 'float64')) for o in self.outputs]
-    print "0th pred ", self.predictions[0]
+    #print "0th pred ", self.predictions[0]
     #print "vocab ", self.vocab
     # Reshape the output into len(vocab) sized chunks - the -1 says as many as
     # needed to evenly divide
@@ -359,6 +361,15 @@ class RNNLM_Model(LanguageModel):
       sys.stdout.write('\r')
     return np.exp(np.mean(total_loss))
 
+def generate_word(session, model, tokens, prev_state):
+    
+    pdSoftMax, final_state = session.run([model.sMax, model.final_state], 
+            feed_dict={ model.input_placeholder: np.array([tokens]).T, model.initial_state: prev_state, model.dropout_placeholder: 1})
+    #randomly pick one from pdSoftMax, decode
+    #idx = np.random.choice(a=range(len(pdSoftMax)), p=pdSoftMax)
+    #print "pd ", pdSoftMax.shape
+    return pdSoftMax[0, 0, :], final_state
+
 def generate_text(session, model, config, starting_text='<eos>',
                   stop_length=100, stop_tokens=None, temp=1.0):
   """Generate text from the model.
@@ -382,11 +393,22 @@ def generate_text(session, model, config, starting_text='<eos>',
   state = model.initial_state.eval()
   # Imagine tokens as a batch size of one, length of len(tokens[0])
   tokens = [model.vocab.encode(word) for word in starting_text.split()]
+  current_input = starting_text
+  saver = tf.train.Saver()
+
+  for token in tokens:
+    pdSoftmax, state = generate_word(session, model, [token], state)
+  next_word_idx = sample(pdSoftmax, temperature=temp)
+
+  tokens.append(next_word_idx)
+  saver.restore(session, './ptb_rnnlm.weights')
   for i in xrange(stop_length):
     ### YOUR CODE HERE
-    raise NotImplementedError
+    #print "gen itr ", i
+    pdSoftmax, state = generate_word(session, model, [next_word_idx], state)
+    #raise NotImplementedError
     ### END YOUR CODE
-    next_word_idx = sample(y_pred[0], temperature=temp)
+    next_word_idx = sample(pdSoftmax, temperature=temp)
     tokens.append(next_word_idx)
     if stop_tokens and model.vocab.decode(tokens[-1]) in stop_tokens:
       break
@@ -394,7 +416,7 @@ def generate_text(session, model, config, starting_text='<eos>',
   return output
 
 def generate_sentence(session, model, config, *args, **kwargs):
-  """Convenice to generate a sentence from the model."""
+  """Convenience to generate a sentence from the model."""
   return generate_text(session, model, config, *args, stop_tokens=['<eos>'], **kwargs)
 
 def test_RNNLM():
@@ -441,12 +463,12 @@ def test_RNNLM():
         break
       print 'Total time: {}'.format(time.time() - start)
       
-    saver.restore(session, 'ptb_rnnlm.weights')
+    #saver.restore(session, './ptb_rnnlm.weights')
     test_pp = model.run_epoch(session, model.encoded_test)
     print '=-=' * 5
     print 'Test perplexity: {}'.format(test_pp)
     print '=-=' * 5
-    starting_text = 'in palo alto'
+    starting_text = 'in palo alto which I like to call shallow alto'
     while starting_text:
       print ' '.join(generate_sentence(
           session, gen_model, gen_config, starting_text=starting_text, temp=1.0))
